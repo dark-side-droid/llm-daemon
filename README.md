@@ -43,7 +43,7 @@ Before building and running Daemon, ensure you have the necessary development to
 2.  **Compile the Application:**
     Use the provided `Makefile` or compile directly using the following command:
     ```bash
-    gcc tray_app.c -o daemon \
+    gcc llm-daemon.c -o daemon \
         $(pkg-config --cflags --libs gtk+-3.0 ayatana-appindicator3-0.1 libnotify) \
         $(curl-config --cflags --libs)
     ```
