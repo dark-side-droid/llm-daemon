@@ -101,9 +101,9 @@ To modify these settings, open the Daemon application, navigate to the **"Settin
 ### Monitoring
 
 *   **Status Icon:** The icon in your system tray will dynamically change:
-    *   🟢 **Running:** Service is healthy and accepting requests.
-    *   🟡 **Starting/Stopping:** Process is being managed.
-    *   🔴 **Stopped:** No server is currently active.
+    *   🟢 **Running:** Service is healthy and accepting requests. Displays the `emblem-ok` icon.
+    *   🟡 **Starting/Stopping:** Process is being managed. Displays the `emblem-synchronizing` icon.
+    *   🔴 **Stopped:** No server is currently active. Displays the `emblem-readonly` icon.
 
 ## 🛠️ Technical Details
 
