@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/Status-Stable-blue.svg)]([https://github.com/dark-side-droid/llm-daemon])
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%2B%20Debian-green.svg)]([])
+[![Platform](https://img.shields.io/badge/Platform-Debian_%2F_Ubuntu-green)]([])
 
 ## Overview
 
@@ -62,7 +62,7 @@ Daemon relies on a configuration file for all server-specific settings.
 
 The main configuration file is located at:
 ```
-~/.config/trayapp/config.ini
+~/.config/llm-daemon/config.ini
 ```
 
 This file controls the path to the server binary, the model, network settings, and context size.
@@ -71,7 +71,7 @@ This file controls the path to the server binary, the model, network settings, a
 
 ```ini
 [server]
-bin_dir = /home/gilgamesh/Projects/AI Tests/llama-b9033-bin-ubuntu-vulkan-x64/llama-b9033/bin
+bin_dir = /home/USERNAME/Projects/AI/llama-cpp/bin
 server_bin = /llama-server
 model_path = /models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf
 host = 127.0.0.1
