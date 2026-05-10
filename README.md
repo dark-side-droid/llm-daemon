@@ -141,5 +141,5 @@ After the settings have been configured you can simply:
 | **GUI** | GTK+ 3.0 | Building the system tray UI and settings dialog. |
 | **Process Mgmt** | `g_spawn_async`, `g_child_watch_add` | Spawning the server and monitoring for crashes. |
 | **HTTP Checks** | `libcurl` | Performing periodic readiness probes (HEAD requests). |
-| **Configuration** | `GKeyFile` | Reading and writing settings from `~/.config/trayapp/config.ini`. |
+| **Configuration** | `GKeyFile` | Reading and writing settings from `~/.config/llm-daemon/config.ini`. |
 | **Notifications** | `libnotify` | Displaying status updates to the desktop. |
