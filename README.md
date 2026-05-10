@@ -59,7 +59,7 @@ sudo apt install -y \
     ```
 
 2.  **Compile the Application:**
-    Use the provided `Makefile` or compile directly using the following command:
+    Compile using the following command:
     ```bash
     gcc llm-daemon.c -o llm-daemon \
         $(pkg-config --cflags --libs gtk+-3.0 ayatana-appindicator3-0.1 libnotify) \
