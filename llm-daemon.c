@@ -1,15 +1,5 @@
 /*
- * llm-daemon.c — System tray manager for llama-server (v4.7)
- *
- * Fixes in v4.7:
- *   1. lock_acquire: fix stale-lock recovery (unlink before retry)
- *   2. on_log_io: fix source removal (return G_SOURCE_CONTINUE on HUP/EOF only)
- *   3. FD leak: g_io_channel_set_close_on_unref() for log channels
- *   4. envp: replace with g_environ_setenv() for runtime compatibility
- *   5. signal_pipe: make BOTH ends O_NONBLOCK to avoid signal-handler deadlock
- *   6. Shutdown: stop_child() → wait for child → safe_log_channels_close()
- *   7. signal(): use sigaction() with SA_RESTART
- *   8. log_append: unlock log_mutex before GTK calls
+ * llm-daemon.c — System tray manager for llama-server (v1.0)
  */
 
 #define _GNU_SOURCE
