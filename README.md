@@ -107,7 +107,6 @@ You must configure:
 | Port            | Usually `8080`             |
 | Context size    | Example: `4096`            |
 | Threads         | CPU threads to use         |
-| GPU layers      | GPU offloading amount      |
 | Temperature     | Model creativity           |
 | Flash Attention | Optional acceleration      |
 
