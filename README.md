@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/Status-Stable-blue.svg)]([https://github.com/dark-side-droid/llm-daemon])
 [![Platform](https://img.shields.io/badge/Platform-Debian_%2F_Ubuntu-green)]([])
+[![Version](https://img.shields.io/badge/version-1.0-brightgreen)]([])
 
 ## Overview
 
@@ -133,13 +134,26 @@ After the settings have been configured you can simply:
     *   🟡 **Starting/Stopping:** Process is being managed. Displays the `system-run-symbolic` icon.
     *   🔴 **Stopped:** No server is currently active. Displays the `process-stopped-symbolic` icon.
 
-## 🛠️ Technical Details
+## Common Problems
 
-| Component | Technology / Library | Purpose |
-| :--- | :--- | :--- |
-| **Language** | C | Core application logic. |
-| **GUI** | GTK+ 3.0 | Building the system tray UI and settings dialog. |
-| **Process Mgmt** | `g_spawn_async`, `g_child_watch_add` | Spawning the server and monitoring for crashes. |
-| **HTTP Checks** | `libcurl` | Performing periodic readiness probes (HEAD requests). |
-| **Configuration** | `GKeyFile` | Reading and writing settings from `~/.config/llm-daemon/config.ini`. |
-| **Notifications** | `libnotify` | Displaying status updates to the desktop. |
+### Server instantly exits
+
+Usually caused by:
+
+* wrong model path
+* incompatible model
+* unsupported GPU settings
+* missing CUDA / Vulkan libraries
+
+Run `llama-server` manually in terminal first to confirm it works. This program is just a wrapper, not a debugger for `llama.cpp`.
+
+### No tray icon appears
+
+Install an indicator extension if using GNOME.
+
+Ubuntu usually works automatically.
+
+### Flash Attention errors
+
+Disable it in Settings if startup fails.
+
