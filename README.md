@@ -131,7 +131,7 @@ After the settings have been configured you can simply:
 *   **Status Icon:** The icon in your system tray will dynamically change:
     *   🟢 **Running:** Service is healthy and accepting requests. Displays the `emblem-ok-symbolic` icon.
     *   🟡 **Starting/Stopping:** Process is being managed. Displays the `system-run-symbolic` icon.
-    *   🔴 **Stopped:** No server is currently active. Displays the `process-stopped-symbolic` icon.
+    *   🔴 **Stopped:** No server is currently active. Displays the `system-software-update-symbolic` icon.
 
 ## Common Problems
 
