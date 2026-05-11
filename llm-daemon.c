@@ -70,6 +70,7 @@ typedef struct {
     gint     threads;      /* -t N                                           */
     gdouble  temperature;  /* --temp F                                       */
     gboolean flash_attn;   /* --flash-attn on                               */
+    gboolean tools;        /* --tools all  (on by default if model supports it, but can force on/off) */
 } ServerConfig;
 
 typedef struct {
@@ -217,6 +218,7 @@ static void server_config_defaults(ServerConfig *c)
     c->threads    = DEFAULT_THREADS;
     c->temperature = DEFAULT_TEMP;
     c->flash_attn = FALSE;
+    c->tools      = FALSE;  
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -264,6 +266,7 @@ static void config_load(void)
     g_config.threads     = KFI("threads",      DEFAULT_THREADS);
     g_config.temperature = KFD("temperature",  DEFAULT_TEMP);
     g_config.flash_attn  = KFB("flash_attn",   FALSE);
+    g_config.flash_attn  = KFB("flash_attn",   FALSE);
 
 #undef KFS
 #undef KFI
@@ -291,6 +294,7 @@ static void config_save(void)
     g_key_file_set_integer(kf, "llm-daemon", "threads",     g_config.threads);
     g_key_file_set_double (kf, "llm-daemon", "temperature", g_config.temperature);
     g_key_file_set_boolean(kf, "llm-daemon", "flash_attn",  g_config.flash_attn);
+    g_key_file_set_boolean(kf, "llm-daemon", "tools",       g_config.tools);
 
     g_mkdir_with_parents(dir, 0755);
     GError *err = NULL;
@@ -416,6 +420,10 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
         gboolean flash_attn = gtk_toggle_button_get_active(
             GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "flash_attn")));
 
+        gboolean tools = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "tools")));
+
+
         if (port < 1 || port > 65535) {
             GtkWidget *err_dlg = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
                 GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
@@ -437,7 +445,7 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
         g_config.threads     = threads;
         g_config.temperature = temperature;
         g_config.flash_attn  = flash_attn;
-
+        g_config.tools       = tools;
         config_save();
     }
     gtk_widget_destroy(GTK_WIDGET(dlg));
@@ -575,6 +583,19 @@ static void on_settings_activate(GtkMenuItem *item, gpointer data)
         g_object_set_data(G_OBJECT(dlg), "flash_attn", chk);
         row++;
     }
+
+    /* ── Tools toggle ── */
+{
+    GtkWidget *lbl = gtk_label_new("Tools:");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+    GtkWidget *chk = gtk_check_button_new();
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.tools);
+    gtk_widget_set_halign(chk, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+    g_object_set_data(G_OBJECT(dlg), "tools", chk);
+    row++;
+}
 
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dlg))),
                        grid, TRUE, TRUE, 0);
@@ -1051,7 +1072,7 @@ static void update_icon(void)
     default:
         app_indicator_set_icon(
             indicator,
-            safe_icon("process-stop-symbolic",
+            safe_icon("system-software-update-symbolic  ",
                       "window-close-symbolic"));
         break;
     }
@@ -1144,6 +1165,11 @@ static void do_start(void)
         g_ptr_array_add(argv, (gchar *)"--flash-attn");
         g_ptr_array_add(argv, (gchar *)"on");
     }
+    if (g_config.tools) {
+        g_ptr_array_add(argv, (gchar *)"--tools");
+        g_ptr_array_add(argv, (gchar *)"all");
+    }
+
     g_ptr_array_add(argv, NULL);
 
     GPid    new_pid = 0;
