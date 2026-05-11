@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/Status-Stable-blue.svg)]([https://github.com/dark-side-droid/llm-daemon])
-[![Platform](https://img.shields.io/badge/Platform-Debian_%2F_Ubuntu-green)]([])
+[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2F_GTK-green)]([])
 [![Version](https://img.shields.io/badge/version-1.0-brightgreen)]([])
 
 ## Overview
