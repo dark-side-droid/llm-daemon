@@ -86,7 +86,7 @@ Daemon relies on a configuration file for all server-specific settings. This fil
 [llm-daemon]
 version=1
 server_bin=/home/USERNAME/AI_PROJECT/llama-server
-model_path=/home/USERNAME/AI_PROJECT/models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf
+model_path=/home/USERNAME/AI_PROJECT/models/model.gguf
 host=127.0.0.1
 port=8080
 ctx_size=65000
