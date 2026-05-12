@@ -1,4 +1,4 @@
-# ⚙️ LLM-Daemon: LLM Server Tray Manager
+# ⚙️ LLM-Daemon: System Tray Manager for Local llama.cpp Servers
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/Status-Stable-blue.svg)]([https://github.com/dark-side-droid/llm-daemon])
@@ -7,14 +7,16 @@
 
 ## Overview
 
-**LLM-Daemon** is a lightweight, system-tray application designed to manage the lifecycle and of locally hosted Large Language Model servers. It provides a central, persistent interface for starting, stopping, configuring, and monitoring AI model services, ensuring that your local LLM operations are reliable and responsive.
+LLM-Daemon is a lightweight GTK system tray application for managing local `llama.cpp` servers. It provides a simple graphical interface for starting, stopping, configuring, and monitoring `llama-server` instances without using the terminal or creating scripts.
 
-LLM-Daemon lets you:
-- start and stop `llama-server` without touching the terminal.
-- manage your model configuration
-- monitor server status
-- automatically restart crashed servers
-- keep your local AI server running in the background.
+LLM-Daemon is designed for users who run local GGUF models and want:
+- persistent background inference
+- automatic crash recovery
+- quick model switching
+- server health monitoring
+- desktop integration
+
+The application acts as a management layer around `llama-server`; it does not perform inference itself. LM-Daemon does not replace `llama.cpp`. It launches and monitors an external `llama-server` process using your existing GGUF models.
 
 ## Features
 - Simple GTK system tray interface
@@ -37,7 +39,7 @@ You must already have:
 
 ## Getting Started
 
-### Dependecies
+### Dependencies
 Ubuntu / Debian:
 ```bash
 sudo apt update
@@ -53,14 +55,18 @@ sudo apt install -y \
 ### Installation & Build
 
 1.  **Clone the Repository:**
+```bash
+git clone https://github.com/dark-side-droid/llm-daemon.git
+cd llm-daemon
+```
 
-2.  **Compile the Application:**
+3.  **Compile the Application:**
     Enter the folder and compile using the makefile:
     ```bash
     make
     ```
 
-3.  **Run Daemon:**
+4.  **Run Daemon:**
     ```bash
     ./llm-daemon
     ```
@@ -96,8 +102,8 @@ no_ctx_shift=true
 ngl=auto
 n_tokens=65000
 top_k=40
-top_p=0.94999999999999996
-min_p=0.050000000000000003
+top_p=0.94
+min_p=0.05
 cache_type_k=
 cache_type_v=
 ```
