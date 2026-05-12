@@ -62,15 +62,15 @@ cd llm-daemon
 
 3.  **Compile the Application:**
     Enter the folder and compile using the makefile:
-    ```bash
-    make
-    ```
+```bash
+make
+```
 
 4.  **Run Daemon:**
-    ```bash
-    ./llm-daemon
-    ```
-    The application will initialize, load configuration, and appear in your system tray.
+```bash
+./llm-daemon
+```
+The application will initialize, load configuration, and appear in your system tray.
 
 ## Configuration
 
