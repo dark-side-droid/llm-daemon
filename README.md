@@ -1,4 +1,4 @@
-# ⚙️ LLM-Daemon: System Tray Manager for Local llama.cpp Servers
+# ⚙️ LLM-Daemon: System Tray Manager for local llama.cpp Servers
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/Status-Stable-blue.svg)]([https://github.com/dark-side-droid/llm-daemon])
