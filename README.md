@@ -18,6 +18,8 @@ LLM-Daemon is designed for users who run local GGUF models and want:
 
 The application acts as a management layer around `llama-server`; it does not perform inference itself. LM-Daemon does not replace `llama.cpp`. It launches and monitors an external `llama-server` process using your existing GGUF models.
 
+![Screenshot](https://github.com/dark-side-droid/llm-daemon/blob/main/screenshot.jpg)
+
 ## Features
 - Simple GTK system tray interface
 - Start / Stop / Restart controls
