@@ -53,13 +53,9 @@ sudo apt install -y \
 ### Installation & Build
 
 1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/YourUsername/Daemon.git
-    cd Daemon
-    ```
 
 2.  **Compile the Application:**
-    Compile using the following command:
+    Enter the folder and compile using the makefile:
     ```bash
     make
     ```
