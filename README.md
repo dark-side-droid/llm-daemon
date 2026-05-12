@@ -120,7 +120,7 @@ After the settings have been configured you can simply:
 1.  Launch **Daemon** from your system tray.
 2.  Click the **"Start"** menu item.
 3.  Daemon will launch the LLM server executable defined in the config, set up the required environment variables, and begin monitoring its health.
-4.  Once the HTTP readiness check succeeds, the status will update to **"Running"** (green icon).
+4.  Once the HTTP readiness check succeeds, the status will update to **"Running"** with the tray icon:  `emblem-ok-symbolic`.
 
 ### Stopping a Server
 
