@@ -10,7 +10,7 @@
 **LLM-Daemon** is a lightweight, system-tray application designed to manage the lifecycle and of locally hosted Large Language Model servers. It provides a central, persistent interface for starting, stopping, configuring, and monitoring AI model services, ensuring that your local LLM operations are reliable and responsive.
 
 LLM-Daemon lets you:
-- start and stop `llama-server` without touching terminal.
+- start and stop `llama-server` without touching the terminal.
 - manage your model configuration
 - monitor server status
 - automatically restart crashed servers
@@ -61,9 +61,7 @@ sudo apt install -y \
 2.  **Compile the Application:**
     Compile using the following command:
     ```bash
-    gcc llm-daemon.c -o llm-daemon \
-        $(pkg-config --cflags --libs gtk+-3.0 ayatana-appindicator3-0.1 libnotify) \
-        $(curl-config --cflags --libs)
+    make
     ```
 
 3.  **Run Daemon:**
@@ -85,30 +83,30 @@ Daemon relies on a configuration file for all server-specific settings. This fil
 ```ini
 [llm-daemon]
 version=1
-server_bin=/home/USERNAME/llama-b9033-bin-ubuntu-vulkan-x64/bin/llama-server
-model_path=/home/USERNAME/llama-b9033-bin-ubuntu-vulkan-x64/bin/models/model.gguf
+server_bin=/home/USERNAME/AI_PROJECT/llama-server
+model_path=/home/USERNAME/AI_PROJECT/models/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K_P.gguf
 host=127.0.0.1
 port=8080
-ctx_size=0
-threads=1
+ctx_size=65000
+threads=12
 temperature=1
 flash_attn=true
+rea=auto
+no_mmap=false
+tools=false
+no_warmup=false
+no_webui=false
+no_ctx_shift=true
+ngl=auto
+n_tokens=65000
+top_k=40
+top_p=0.94999999999999996
+min_p=0.050000000000000003
+cache_type_k=
+cache_type_v=
 ```
 
 Alternatively you can  modify these settings via the tray icon. Open the Daemon application, navigate to the **"Settings…"** menu item, and adjust the parameters before clicking **"Save"**.
-
-You must configure:
-
-| Setting         | Description                |
-| --------------- | -------------------------- |
-| Server binary   | Path to `llama-server`     |
-| Model path      | Path to your `.gguf` model |
-| Host            | Usually `127.0.0.1` or `0.0.0.0`      |
-| Port            | Usually `8080`             |
-| Context size    | Example: `4096`            |
-| Threads         | CPU threads to use         |
-| Temperature     | Model creativity           |
-| Flash Attention | Optional acceleration      |
 
 ## Usage Guide
 
