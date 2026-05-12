@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include <stdatomic.h>
 
-
 #include <curl/curl.h>
 #include <glib-unix.h>
 #include <gtk/gtk.h>
@@ -52,10 +51,11 @@ typedef enum {
 } ServiceState;
 
 static const gboolean VALID_TX[STATE_COUNT][STATE_COUNT] = {
-    { FALSE,  TRUE,  FALSE, FALSE },
-    { TRUE,   FALSE, TRUE,  TRUE  },
-    { FALSE,  FALSE, FALSE, TRUE  },
-    { TRUE,   FALSE, FALSE, FALSE },
+    /*              STOPPED  STARTING  RUNNING  STOPPING */
+    /* STOPPED  */{ FALSE,   TRUE,     FALSE,   FALSE },
+    /* STARTING */{ TRUE,    FALSE,    TRUE,    TRUE  },
+    /* RUNNING  */{ TRUE,    FALSE,    FALSE,   TRUE  },  
+    /* STOPPING */{ TRUE,    FALSE,    FALSE,   FALSE },
 };
 
 static const gchar *STATE_NAME[] = { "STOPPED","STARTING","RUNNING","STOPPING" };
@@ -69,8 +69,23 @@ typedef struct {
     gint     port;
     gint     threads;      /* -t N                                           */
     gdouble  temperature;  /* --temp F                                       */
+    gchar   *rea;          /* -rea (reasoning) auto by default, but can force on/off */
     gboolean flash_attn;   /* --flash-attn on                               */
+    gboolean no_mmap;      /* --no-mmap (off by default, but can force on/off) */
     gboolean tools;        /* --tools all  (on by default if model supports it, but can force on/off) */
+    gboolean no_warmup;    /* --no-warmup (off by default, but can force on/off) */
+    gboolean no_webui;     /* --no-webui (webui is on by default, but can force on/off) */
+    gboolean no_ctx_shift; /* --no-ctx-shift (ctx-shift is on by default, but can force on/off) */
+    gchar   *ngl;
+    gchar   *n_tokens;     /* Number of tokens the model can generate*/
+
+    gint     top_k;     // default 40
+    gdouble  top_p;     // default 0.95
+    gdouble  min_p;     // default 0.05
+
+    gchar   *cache_type_k;  /* -ctk: KV cache data type for K  */
+    gchar   *cache_type_v;  /* -ctv: KV cache data type for V  */
+
 } ServerConfig;
 
 typedef struct {
@@ -133,12 +148,12 @@ static gboolean      on_signal_pipe_io(GIOChannel *ch, GIOCondition cond, gpoint
 static void          on_unix_signal_handler(int sig);
 static void          show_err(const gchar *title, const gchar *msg);
 static const gchar  *safe_icon(const gchar *want, const gchar *fallback);
-static void          render_badge(gdouble tps);
 static gboolean      escalate_sigkill(gpointer data);
 static void          on_child_exit(GPid pid, gint status, gpointer data);
 static gboolean      on_poll_tick_final(gpointer d);
 static gboolean      preflight(gchar **errmsg);
 static void          on_settings_activate(GtkMenuItem *item, gpointer data);
+static void          on_browse_clicked(GtkButton *btn, gpointer user_data);
 
 /* ════════════════════════════════════════════════════════════════════════════
    Lock file
@@ -201,11 +216,15 @@ static void config_migrate(GKeyFile *kf, gint from)
 static void server_config_free(ServerConfig *c)
 {
     if (!c) return;
-    // g_free(c->server_bin);
     g_clear_pointer(&c->server_bin, g_free);
     g_free(c->model_path);
     g_free(c->host);
     g_free(c->ctx_size);
+    g_free(g_config.ngl);
+    g_free(g_config.n_tokens);
+    g_free(c->cache_type_k);
+    g_free(c->cache_type_v);
+    g_free(c->rea);
 }
 
 static void server_config_defaults(ServerConfig *c)
@@ -217,8 +236,20 @@ static void server_config_defaults(ServerConfig *c)
     c->ctx_size   = g_strdup(DEFAULT_CTX_SIZE);
     c->threads    = DEFAULT_THREADS;
     c->temperature = DEFAULT_TEMP;
+    c->rea         = g_strdup("auto"); // Reasoning auto by default
     c->flash_attn = FALSE;
+    c->no_mmap      = FALSE;
     c->tools      = FALSE;  
+    c->no_warmup     = FALSE;
+    c->no_webui      = FALSE;
+    c->no_ctx_shift  = FALSE;
+    c->ngl          = NULL;
+    c->n_tokens      = NULL;
+    c->top_k         = 40;
+    c->top_p         = 0.95;
+    c->min_p         = 0.05;
+    c->cache_type_k  = NULL;
+    c->cache_type_v  = NULL;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -265,8 +296,26 @@ static void config_load(void)
     g_config.port        = KFI("port",         DEFAULT_PORT);
     g_config.threads     = KFI("threads",      DEFAULT_THREADS);
     g_config.temperature = KFD("temperature",  DEFAULT_TEMP);
+    g_free(g_config.rea);
+    g_config.rea         = KFS("rea",          "auto");
     g_config.flash_attn  = KFB("flash_attn",   FALSE);
-    g_config.flash_attn  = KFB("flash_attn",   FALSE);
+    g_config.no_mmap     = KFB("no_mmap",      FALSE);
+    g_config.tools       = KFB("tools",        FALSE);
+    g_config.no_warmup   = KFB("no_warmup",    FALSE);
+    g_config.no_webui    = KFB("no_webui",     FALSE);
+    g_config.no_ctx_shift= KFB("no_ctx_shift", FALSE);
+    /* (removed duplicate no_ctx_shift line that was here) */
+    g_free(g_config.ngl);
+    g_config.ngl = KFS("ngl", ""); // Load empty string by default
+    g_free(g_config.n_tokens);
+    g_config.n_tokens = KFS("n_tokens", ""); // Load empty string by default
+
+    g_config.top_k = KFI("top_k", 40);
+    g_config.top_p = KFD("top_p", 0.95);
+    g_config.min_p = KFD("min_p", 0.05);
+    g_config.cache_type_k = KFS("cache_type_k", NULL);
+    g_config.cache_type_v = KFS("cache_type_v", NULL);
+
 
 #undef KFS
 #undef KFI
@@ -294,7 +343,21 @@ static void config_save(void)
     g_key_file_set_integer(kf, "llm-daemon", "threads",     g_config.threads);
     g_key_file_set_double (kf, "llm-daemon", "temperature", g_config.temperature);
     g_key_file_set_boolean(kf, "llm-daemon", "flash_attn",  g_config.flash_attn);
+    g_key_file_set_string (kf, "llm-daemon", "rea",         g_config.rea         ? g_config.rea         : "auto");
+    g_key_file_set_boolean(kf, "llm-daemon", "no_mmap",     g_config.no_mmap);
     g_key_file_set_boolean(kf, "llm-daemon", "tools",       g_config.tools);
+    g_key_file_set_boolean(kf, "llm-daemon", "no_warmup",   g_config.no_warmup);
+    g_key_file_set_boolean(kf, "llm-daemon", "no_webui",    g_config.no_webui);
+    g_key_file_set_boolean(kf, "llm-daemon", "no_ctx_shift",g_config.no_ctx_shift);
+    g_key_file_set_string(kf, "llm-daemon", "ngl", g_config.ngl ? g_config.ngl : "");
+    g_key_file_set_string(kf, "llm-daemon", "n_tokens", g_config.n_tokens ? g_config.n_tokens : "");
+    g_key_file_set_integer(kf, "llm-daemon", "top_k", g_config.top_k);
+    g_key_file_set_double(kf, "llm-daemon", "top_p", g_config.top_p);
+    g_key_file_set_double(kf, "llm-daemon", "min_p", g_config.min_p);
+    g_key_file_set_string(kf, "llm-daemon", "cache_type_k", g_config.cache_type_k ? g_config.cache_type_k : "");
+    g_key_file_set_string(kf, "llm-daemon", "cache_type_v", g_config.cache_type_v ? g_config.cache_type_v : "");
+
+
 
     g_mkdir_with_parents(dir, 0755);
     GError *err = NULL;
@@ -311,8 +374,6 @@ static void config_save(void)
    Settings dialog
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* Attach a text entry + optional browse button to a grid row.
-   Returns the GtkEntry widget. */
 static GtkWidget *add_entry_row(GtkWidget *grid, int row,
                                 const gchar *label_text,
                                 const gchar *value,
@@ -337,20 +398,13 @@ static GtkWidget *add_entry_row(GtkWidget *grid, int row,
         GtkWidget *btn = gtk_button_new_with_label("Browse…");
         /* Store the entry in the button so the callback can update it */
         g_object_set_data(G_OBJECT(btn), "entry", entry);
-        /* Tag whether we want files or any file */
-        g_object_set_data(G_OBJECT(btn), "action",
-                          GINT_TO_POINTER(GTK_FILE_CHOOSER_ACTION_OPEN));
-        g_signal_connect(btn, "clicked", G_CALLBACK(
-            /* inline lambda via nested function — use a named static instead */
-            ({
-                /* can't do true lambdas in C; connect callback below */
-                (void (*)(GtkButton *, gpointer))NULL;
-            })
-        ), NULL);
-        /* We'll use a named callback — attach below */
+        g_signal_connect(btn, "clicked", G_CALLBACK(on_browse_clicked), NULL);
         gtk_grid_attach(GTK_GRID(grid), btn, 2, row, 1, 1);
-        g_object_set_data(G_OBJECT(dlg),
-                          g_strdup_printf("%s_browse", key ? key : ""), btn);
+        if (key) {
+            gchar *browse_key = g_strdup_printf("%s_browse", key);
+            g_object_set_data_full(G_OBJECT(dlg), browse_key, btn, NULL);
+            g_free(browse_key);
+        }
     }
 
     return entry;
@@ -398,6 +452,8 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
 {
     (void)data;
     if (resp == GTK_RESPONSE_ACCEPT) {
+        /* ── Gather ALL values from the dialog widgets BEFORE touching g_config ── */
+
         /* Text fields */
         gchar *server_bin = g_strdup(gtk_entry_get_text(
             GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "server_bin"))));
@@ -407,6 +463,19 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
             GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "host"))));
         gchar *ctx_size = g_strdup(gtk_entry_get_text(
             GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "ctx_size"))));
+        gchar *ngl_copy = g_strdup(gtk_entry_get_text(
+            GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "ngl"))));
+        gchar *n_tokens_copy = g_strdup(gtk_entry_get_text(
+            GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "n_tokens"))));
+        gchar *cache_type_k = g_strdup(gtk_entry_get_text(
+            GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "cache_type_k"))));
+        gchar *cache_type_v = g_strdup(gtk_entry_get_text(
+            GTK_ENTRY(g_object_get_data(G_OBJECT(dlg), "cache_type_v"))));       
+
+        /* Reasoning combo — get_active_text returns a newly-allocated string */
+        gchar *rea_copy = gtk_combo_box_text_get_active_text(
+            GTK_COMBO_BOX_TEXT(g_object_get_data(G_OBJECT(dlg), "rea")));
+        if (!rea_copy) rea_copy = g_strdup("auto");
 
         /* Numeric fields */
         gint port = (gint)gtk_spin_button_get_value(
@@ -415,15 +484,30 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
             GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "threads")));
         gdouble temperature = gtk_spin_button_get_value(
             GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "temperature")));
+        gint top_k = (gint)gtk_spin_button_get_value(
+            GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "top_k")));
+        gdouble top_p = gtk_spin_button_get_value(
+            GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "top_p")));
+        gdouble min_p = gtk_spin_button_get_value(
+            GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "min_p")));
 
-        /* Boolean */
+
+
+        /* Boolean toggles */
         gboolean flash_attn = gtk_toggle_button_get_active(
             GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "flash_attn")));
-
+        gboolean no_mmap = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "no_mmap")));
         gboolean tools = gtk_toggle_button_get_active(
             GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "tools")));
+        gboolean no_warmup = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "no_warmup")));
+        gboolean no_webui = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "no_webui")));
+        gboolean no_ctx_shift = gtk_toggle_button_get_active(
+            GTK_TOGGLE_BUTTON(g_object_get_data(G_OBJECT(dlg), "no_ctx_shift")));
 
-
+        /* ── Validate before committing ── */
         if (port < 1 || port > 65535) {
             GtkWidget *err_dlg = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL,
                 GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
@@ -432,20 +516,37 @@ static void on_settings_response(GtkDialog *dlg, gint resp, gpointer data)
             gtk_widget_destroy(err_dlg);
             g_free(server_bin); g_free(model_path);
             g_free(host);       g_free(ctx_size);
+            g_free(ngl_copy);   g_free(n_tokens_copy);
+            g_free(rea_copy);
             gtk_widget_destroy(GTK_WIDGET(dlg));
             return;
         }
 
+        /* ── Free old config AFTER reading all widget values ── */
         server_config_free(&g_config);
-        g_config.server_bin  = server_bin;
-        g_config.model_path  = model_path;
-        g_config.host        = host;
-        g_config.ctx_size    = ctx_size;
-        g_config.port        = port;
-        g_config.threads     = threads;
-        g_config.temperature = temperature;
-        g_config.flash_attn  = flash_attn;
-        g_config.tools       = tools;
+
+        /* ── Commit ── */
+        g_config.server_bin   = server_bin;
+        g_config.model_path   = model_path;
+        g_config.host         = host;
+        g_config.ctx_size     = ctx_size;
+        g_config.port         = port;
+        g_config.threads      = threads;
+        g_config.temperature  = temperature;
+        g_config.rea          = rea_copy;
+        g_config.flash_attn   = flash_attn;
+        g_config.no_mmap      = no_mmap;
+        g_config.tools        = tools;
+        g_config.no_warmup    = no_warmup;
+        g_config.no_webui     = no_webui;
+        g_config.no_ctx_shift = no_ctx_shift;
+        g_config.ngl          = ngl_copy;
+        g_config.n_tokens     = n_tokens_copy;
+        g_config.top_k        = top_k;
+        g_config.top_p        = top_p;
+        g_config.min_p        = min_p;
+        g_config.cache_type_k = cache_type_k;
+        g_config.cache_type_v = cache_type_v;
         config_save();
     }
     gtk_widget_destroy(GTK_WIDGET(dlg));
@@ -562,6 +663,39 @@ static void on_settings_activate(GtkMenuItem *item, gpointer data)
         row++;
     }
 
+    /* ── Max tokens (-n) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Max tokens (-n):");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), g_config.n_tokens ? g_config.n_tokens : "");
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_entry_set_width_chars(GTK_ENTRY(entry), 10);
+        gtk_widget_set_halign(entry, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "n_tokens", entry);
+        row++;
+    }
+
+
+    /* ── Number of GPU layers (-ngl) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("GPU layers (-ngl):");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), g_config.ngl ? g_config.ngl : "");
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_entry_set_width_chars(GTK_ENTRY(entry), 20);
+        gtk_widget_set_halign(entry, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "ngl", entry);
+        row++;
+    }
+
     /* ── Threads (-t) ── */
     add_spin_row(grid, row++, "Threads:", 1, 256, 1,
                  g_config.threads, 0, "threads", dlg);
@@ -570,6 +704,126 @@ static void on_settings_activate(GtkMenuItem *item, gpointer data)
     /* ── Temperature (--temp) ── */
     add_spin_row(grid, row++, "Temperature:", 0.0, 1.0, 0.01,
                  g_config.temperature, 2, "temperature", dlg);
+
+    /* ── Sampling: top-k / top-p / min-p (single row) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Sampling:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        /* main horizontal container */
+        GtkWidget *sampling_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+        gtk_widget_set_halign(sampling_box, GTK_ALIGN_START);
+        gtk_widget_set_hexpand(sampling_box, FALSE);
+
+        /* ---------------- top-k ---------------- */
+        GtkWidget *top_k_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+
+        GtkWidget *top_k_label = gtk_label_new("top-k");
+        GtkWidget *top_k_spin = gtk_spin_button_new_with_range(0, 1000, 1);
+
+        gtk_spin_button_set_digits(GTK_SPIN_BUTTON(top_k_spin), 0);
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(top_k_spin), g_config.top_k);
+
+        gtk_box_pack_start(GTK_BOX(top_k_box), top_k_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(top_k_box), top_k_spin, FALSE, FALSE, 0);
+
+        g_object_set_data(G_OBJECT(dlg), "top_k", top_k_spin);
+
+        /* ---------------- top-p ---------------- */
+        GtkWidget *top_p_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+
+        GtkWidget *top_p_label = gtk_label_new("top-p");
+        GtkWidget *top_p_spin = gtk_spin_button_new_with_range(0.0, 1.0, 0.01);
+
+        gtk_spin_button_set_digits(GTK_SPIN_BUTTON(top_p_spin), 2);
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(top_p_spin), g_config.top_p);
+
+        gtk_box_pack_start(GTK_BOX(top_p_box), top_p_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(top_p_box), top_p_spin, FALSE, FALSE, 0);
+
+        g_object_set_data(G_OBJECT(dlg), "top_p", top_p_spin);
+
+        /* ---------------- min-p ---------------- */
+        GtkWidget *min_p_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+
+        GtkWidget *min_p_label = gtk_label_new("min-p");
+        GtkWidget *min_p_spin = gtk_spin_button_new_with_range(0.0, 1.0, 0.01);
+
+        gtk_spin_button_set_digits(GTK_SPIN_BUTTON(min_p_spin), 2);
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(min_p_spin), g_config.min_p);
+
+        gtk_box_pack_start(GTK_BOX(min_p_box), min_p_label, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(min_p_box), min_p_spin, FALSE, FALSE, 0);
+
+        g_object_set_data(G_OBJECT(dlg), "min_p", min_p_spin);
+
+        /* ---------------- assemble ---------------- */
+        gtk_box_pack_start(GTK_BOX(sampling_box), top_k_box, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(sampling_box), top_p_box, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(sampling_box), min_p_box, FALSE, FALSE, 0);
+
+        gtk_grid_attach(GTK_GRID(grid), sampling_box, 1, row, 1, 1);
+
+        row += 1;
+    }
+
+        /* ── KV cache type for K (-ctk) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("CTK (-ctk):");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), g_config.cache_type_k ? g_config.cache_type_k : "");
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_entry_set_width_chars(GTK_ENTRY(entry), 12);
+        gtk_widget_set_halign(entry, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "cache_type_k", entry);
+        row++;
+    }
+
+    /* ── KV cache type for V (-ctv) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("CTV (-ctv):");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), g_config.cache_type_v ? g_config.cache_type_v : "");
+        gtk_widget_set_hexpand(entry, TRUE);
+        gtk_entry_set_width_chars(GTK_ENTRY(entry), 12);
+        gtk_widget_set_halign(entry, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "cache_type_v", entry);
+        row++;
+    }
+
+
+    /* ── Reasoning (-rea) ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Reasoning (-rea):");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *combo = gtk_combo_box_text_new();
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "on");
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "off");
+        gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo), "auto");
+        /* Items appended without IDs, so select by index: 0=on, 1=off, 2=auto */
+        {
+            const gchar *cur_rea = g_config.rea ? g_config.rea : "auto";
+            gint idx = 2; /* default: auto */
+            if (g_strcmp0(cur_rea, "on")  == 0) idx = 0;
+            else if (g_strcmp0(cur_rea, "off") == 0) idx = 1;
+            gtk_combo_box_set_active(GTK_COMBO_BOX(combo), idx);
+        }
+        gtk_widget_set_halign(combo, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), combo, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "rea", combo);
+        row++;
+    }
 
     /* ── Flash Attention checkbox ── */
     {
@@ -584,18 +838,72 @@ static void on_settings_activate(GtkMenuItem *item, gpointer data)
         row++;
     }
 
+    /* ── --no-mmap toggle ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Disable MMAP:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+        GtkWidget *chk = gtk_check_button_new();
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.no_mmap);
+        gtk_widget_set_halign(chk, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "no_mmap", chk);
+        row++;
+    }
+
     /* ── Tools toggle ── */
-{
-    GtkWidget *lbl = gtk_label_new("Tools:");
-    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
-    GtkWidget *chk = gtk_check_button_new();
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.tools);
-    gtk_widget_set_halign(chk, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
-    g_object_set_data(G_OBJECT(dlg), "tools", chk);
-    row++;
-}
+    {
+        GtkWidget *lbl = gtk_label_new("Tools:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+        GtkWidget *chk = gtk_check_button_new();
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.tools);
+        gtk_widget_set_halign(chk, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "tools", chk);
+        row++;
+    }
+
+    /* ── --no-warmup toggle ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Disable warmup:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+        GtkWidget *chk = gtk_check_button_new();
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.no_warmup);
+        gtk_widget_set_halign(chk, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "no_warmup", chk);
+        row++;
+    }
+
+    /* ── --no-webui toggle ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Disable web UI:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+        GtkWidget *chk = gtk_check_button_new();
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.no_webui);
+        gtk_widget_set_halign(chk, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "no_webui", chk);
+        row++;
+    }
+
+    /* ── --no-context-shift toggle ── */
+    {
+        GtkWidget *lbl = gtk_label_new("Disable context shift:");
+        gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+        gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+        GtkWidget *chk = gtk_check_button_new();
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chk), g_config.no_ctx_shift);
+        gtk_widget_set_halign(chk, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(grid), chk, 1, row, 1, 1);
+        g_object_set_data(G_OBJECT(dlg), "no_ctx_shift", chk);
+        row++;
+    }
+
 
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dlg))),
                        grid, TRUE, TRUE, 0);
@@ -959,94 +1267,6 @@ static const gchar *safe_icon(const gchar *want, const gchar *fallback)
            ? want : fallback;
 }
 
-static void render_badge(gdouble tps)
-{
-    if (!indicator) return;
-
-    const gint SIZE = 48;
-    cairo_surface_t *surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, SIZE, SIZE);
-    if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS) {
-        g_printerr("Cairo surface failed\n");
-        return;
-    }
-    cairo_t *cr = cairo_create(surf);
-
-    cairo_arc(cr, SIZE / 2.0, SIZE / 2.0, SIZE / 2.0 - 2, 0, 2 * G_PI);
-    if (tps >= 0) cairo_set_source_rgb(cr, 0.2, 0.8, 0.2);
-    else          cairo_set_source_rgb(cr, 0.9, 0.2, 0.2);
-    cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, 0.95, 0.95, 0.95);
-    cairo_set_line_width(cr, 2.0);
-    cairo_stroke(cr);
-
-    if (tps >= 0) {
-        gchar *lbl = tps >= 10 ? g_strdup_printf("%.0f", tps)
-                               : g_strdup_printf("%.1f", tps);
-        cairo_set_source_rgb(cr, 1, 1, 1);
-        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-        cairo_set_font_size(cr, tps >= 100 ? 14.0 : 16.0);
-        cairo_text_extents_t te;
-        cairo_text_extents(cr, lbl, &te);
-        cairo_move_to(cr, SIZE / 2.0 - te.width / 2.0 - te.x_bearing,
-                          SIZE / 2.0 - te.height / 2.0 - te.y_bearing);
-        cairo_show_text(cr, lbl);
-        g_free(lbl);
-    } else {
-        cairo_set_source_rgb(cr, 1, 1, 1);
-        cairo_set_line_width(cr, 4.0);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-        gdouble cx = SIZE / 2.0, cy = SIZE / 2.0, r = SIZE / 4.0;
-        cairo_move_to(cr, cx - r, cy - r); cairo_line_to(cr, cx + r, cy + r);
-        cairo_move_to(cr, cx + r, cy - r); cairo_line_to(cr, cx - r, cy + r);
-        cairo_stroke(cr);
-    }
-    cairo_destroy(cr);
-
-    /* Flush so pixel data is accessible */
-    cairo_surface_flush(surf);
-
-    guchar *pixels = cairo_image_surface_get_data(surf);
-    gint    stride = cairo_image_surface_get_stride(surf);
-
-    /* Cairo uses ARGB pre-multiplied; gdk-pixbuf wants RGBA */
-    guchar *rgba = g_malloc(SIZE * SIZE * 4);
-    for (gint y = 0; y < SIZE; y++) {
-        for (gint x = 0; x < SIZE; x++) {
-            guint32 px;
-            memcpy(&px, pixels + y * stride + x * 4, 4);
-            guint8 a = (px >> 24) & 0xff;
-            guint8 r = (px >> 16) & 0xff;
-            guint8 g_ch = (px >>  8) & 0xff;
-            guint8 b = (px      ) & 0xff;
-            gint off = (y * SIZE + x) * 4;
-            rgba[off+0] = r;
-            rgba[off+1] = g_ch;
-            rgba[off+2] = b;
-            rgba[off+3] = a;
-        }
-    }
-
-    GdkPixbuf *pb = gdk_pixbuf_new_from_data(rgba, GDK_COLORSPACE_RGB, TRUE, 8,
-                                              SIZE, SIZE, SIZE * 4,
-                                              (GdkPixbufDestroyNotify)g_free, NULL);
-    if (pb) {
-        gchar  *tmp = g_build_filename(g_get_tmp_dir(), "llmtray_badge.png", NULL);
-        GError *err = NULL;
-        if (gdk_pixbuf_save(pb, tmp, "png", &err, NULL))
-            app_indicator_set_icon_full(indicator, tmp, "LLM");
-        else {
-            g_printerr("Badge save: %s\n", err ? err->message : "?");
-            g_clear_error(&err);
-        }
-        g_free(tmp);
-        g_object_unref(pb);
-    } else {
-        g_free(rgba);
-    }
-    cairo_surface_destroy(surf);
-}
-
-
 static void update_icon(void)
 {
     if (!indicator) return;
@@ -1136,7 +1356,6 @@ static void do_start(void)
 
     gchar **env = g_get_environ();
 
-    // env = g_environ_setenv(env, "LD_LIBRARY_PATH", bin_dir, TRUE);
     const gchar *old_ld = g_environ_getenv(env, "LD_LIBRARY_PATH");
     gchar *new_ld = old_ld && *old_ld
         ? g_strdup_printf("%s:%s", bin_dir, old_ld)
@@ -1157,20 +1376,102 @@ static void do_start(void)
     g_ptr_array_add(argv, ps);
     g_ptr_array_add(argv, (gchar *)"-c");
     g_ptr_array_add(argv, g_config.ctx_size);
+
+    // Add -n only if non-empty and numeric > 0
+    if (g_config.n_tokens && *g_config.n_tokens) {
+        gchar *endptr;
+        long val = strtol(g_config.n_tokens, &endptr, 10);
+        if (*endptr == '\0' && val > 0) {  // ✅ Valid positive integer
+            g_ptr_array_add(argv, (gchar *)"-n");
+            g_ptr_array_add(argv, g_strdup(g_config.n_tokens));  // 👈 duplicate for argv ownership
+        }
+    }
+
+    // Add -rea
+    g_ptr_array_add(argv, (gchar *)"-rea");
+    g_ptr_array_add(argv, g_config.rea ? g_config.rea : "auto");
+
+
     g_ptr_array_add(argv, (gchar *)"-t");
     g_ptr_array_add(argv, ts);
     g_ptr_array_add(argv, (gchar *)"--temp");
     g_ptr_array_add(argv, temps);
+
+
+    if (g_config.top_k != 40) {
+        g_ptr_array_add(argv, (gchar *)"--top-k");
+        g_ptr_array_add(argv, g_strdup_printf("%d", g_config.top_k));
+    }
+
+    if (g_config.top_p != 0.95) {
+        g_ptr_array_add(argv, (gchar *)"--top-p");
+        g_ptr_array_add(argv, g_strdup_printf("%.2f", g_config.top_p));
+    }
+
+    if (g_config.min_p != 0.05) {
+        g_ptr_array_add(argv, (gchar *)"--min-p");
+        g_ptr_array_add(argv, g_strdup_printf("%.2f", g_config.min_p));
+    }
+
     if (g_config.flash_attn) {
         g_ptr_array_add(argv, (gchar *)"--flash-attn");
         g_ptr_array_add(argv, (gchar *)"on");
     }
+    
+    if (g_config.no_mmap) {
+        g_ptr_array_add(argv, (gchar *)"--no-mmap");
+    }
+
     if (g_config.tools) {
         g_ptr_array_add(argv, (gchar *)"--tools");
         g_ptr_array_add(argv, (gchar *)"all");
     }
 
+    if (g_config.no_warmup) {
+        g_ptr_array_add(argv, (gchar *)"--no-warmup");
+    }
+
+    if (g_config.no_webui) {
+        g_ptr_array_add(argv, (gchar *)"--no-webui");
+    }
+
+    if (g_config.no_ctx_shift) {
+        g_ptr_array_add(argv, (gchar *)"--no-context-shift");
+    }
+
+    if (g_config.ngl && *g_config.ngl) {
+        g_ptr_array_add(argv, (gchar *)"-ngl");
+        g_ptr_array_add(argv, g_config.ngl);
+    }
+
+    if (g_config.cache_type_k && *g_config.cache_type_k) {
+        g_ptr_array_add(argv, (gchar *)"-ctk");
+        g_ptr_array_add(argv, g_config.cache_type_k);  // 👈 no copy needed: we own the string
+    }
+
+    if (g_config.cache_type_v && *g_config.cache_type_v) {
+        g_ptr_array_add(argv, (gchar *)"-ctv");
+        g_ptr_array_add(argv, g_config.cache_type_v);
+    }
+
+
+    /* Log if Web UI is disabled */
+    if (g_config.no_webui) {
+        g_printerr("[llm-daemon] Web UI is disabled (--no-webui).\n");
+    }
+
     g_ptr_array_add(argv, NULL);
+
+    // Log the full command line
+    {
+        GString *cmd_line = g_string_new("[llm-daemon] Launching with:");
+        for (guint i = 0; i < argv->len - 1; i++) { // skip the trailing NULL
+            g_string_append(cmd_line, " ");
+            g_string_append(cmd_line, (gchar *)argv->pdata[i]);
+        }
+        g_printerr("%s\n", cmd_line->str);
+        g_string_free(cmd_line, TRUE);
+    }
 
     GPid    new_pid = 0;
     GError *gerr    = NULL;
