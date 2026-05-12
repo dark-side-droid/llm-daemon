@@ -36,8 +36,8 @@ This application does **not** include `llama.cpp`.
 
 You must already have:
 1. A working `llama.cpp` build
-2. The `llama-server` executable
-3. At least one `.gguf` model file
+2. The `llama-server` executable and everything it requires.
+3. At least one compatible model `.gguf` or otherwise compatible with llama.cpp
 
 ## Getting Started
 
