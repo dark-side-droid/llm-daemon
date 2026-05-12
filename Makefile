@@ -5,7 +5,8 @@ CFLAGS   += $(shell curl-config --cflags)
 LDFLAGS  += $(shell pkg-config --libs gtk+-3.0 ayatana-appindicator3-0.1 libnotify)
 LDFLAGS  += $(shell curl-config --libs)
 
-SRC = main.c config.c menu.c state.c server.c curl.c child.c notify.c globals.c
+SRCDIR = src
+SRC = $(SRCDIR)/main.c $(SRCDIR)/config.c $(SRCDIR)/menu.c $(SRCDIR)/state.c $(SRCDIR)/server.c $(SRCDIR)/curl.c $(SRCDIR)/child.c $(SRCDIR)/notify.c $(SRCDIR)/globals.c
 
 OBJ = $(SRC:.c=.o)
 TARGET = llm-daemon
